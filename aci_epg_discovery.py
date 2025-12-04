@@ -228,65 +228,46 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                     is_vmm = True
                     break
         
-
-        
         if is_vmm:
             # Attempt to resolve Dynamic VLAN via Endpoint Policy (EPP)
-            # Optimized: Query fvDyPathAtt AND its children (fvIfConn) in one go.
+            # Optimized: Query fvIfConn directly under the Node.
+            # This avoids traversing the hierarchy and potential missing children issues.
             
             try:
-                # Query fvDyPathAtt with children to get fvIfConn immediately
-                dyatt_url = f"https://{apic_ip}/api/node/mo/uni/epp/fv-[{epg_dn}]/node-{node}.json?query-target=subtree&target-subtree-class=fvDyPathAtt&rsp-subtree=children"
-                log_debug(f"DEBUG: Querying DyPath (Bulk): {dyatt_url}")
-                dyatt_resp = requests.get(dyatt_url, headers=headers, verify=False, timeout=10)
-                dyatt_resp.raise_for_status()
-                dyatt_data = dyatt_resp.json()
+                # Query fvIfConn directly
+                conn_url = f"https://{apic_ip}/api/node/mo/uni/epp/fv-[{epg_dn}]/node-{node}.json?query-target=subtree&target-subtree-class=fvIfConn"
+                log_debug(f"DEBUG: Querying fvIfConn (Bulk): {conn_url}")
+                conn_resp = requests.get(conn_url, headers=headers, verify=False, timeout=10)
+                conn_resp.raise_for_status()
+                conn_data = conn_resp.json()
                 
                 # Normalize interface for matching (Ethernet -> eth)
                 clean_interface = str(interface).strip()
                 norm_interface = clean_interface.replace("Ethernet", "eth")
                 log_debug(f"DEBUG: Looking for interface: '{norm_interface}'")
                 
-                items = dyatt_data.get('imdata', [])
-                log_debug(f"DEBUG: DyPath Items: {len(items)}")
+                items = conn_data.get('imdata', [])
+                log_debug(f"DEBUG: fvIfConn Items: {len(items)}")
                 
                 if not items:
-                     return "EPP: No Dynamic Paths", "VMM Domain", "N/A", domains_str
+                     return "EPP: No Dynamic Connections", "VMM Domain", "N/A", domains_str
 
                 for item in items:
-                    if 'fvDyPathAtt' in item:
-                        dyatt_obj = item['fvDyPathAtt']
-                        dn = dyatt_obj['attributes'].get('dn', '')
-                        log_debug(f"DEBUG: Checking DyPath DN: {dn}")
+                    if 'fvIfConn' in item:
+                        conn_obj = item['fvIfConn']
+                        dn = conn_obj['attributes'].get('dn', '')
                         
-                        # Check if this DyPath is for our interface
-                        # DN format: .../dyatt-[topology/pod-1/paths-263/pathep-[eth1/58]]
+                        # Check if this fvIfConn is for our interface
+                        # DN format: .../dyatt-[topology/pod-1/paths-215/pathep-[eth1/24]]/conndef/conn-...
                         
                         if f"pathep-[{norm_interface}]" in dn:
-                             log_debug("DEBUG: Interface match found in DN!")
-                             # Verify strict match
-                             import re
-                             match = re.search(r'dyatt-\[(.*?)\]', dn)
-                             if match:
-                                 path_in_dn = match.group(1)
-                                 # Check strict match for Direct or VPC
-                                 if f"paths-{node}/pathep-[{norm_interface}]" in path_in_dn or \
-                                    f"pathep-[{norm_interface}]" in path_in_dn: # Loose match for safety
-                                     
-                                     # Found the correct DyPath, now look for fvIfConn in children
-                                     children = dyatt_obj.get('children', [])
-                                     log_debug(f"DEBUG: Checking {len(children)} children for fvIfConn")
-                                     
-                                     for child in children:
-                                         if 'fvIfConn' in child:
-                                             encap = child['fvIfConn']['attributes'].get('encap', '')
-                                             if encap:
-                                                 return encap, "Dynamic (VMM Resolved)", dn, domains_str
-                                     
-                                     return "EPP: No VLAN in Children", "VMM Domain", dn, domains_str
+                             log_debug(f"DEBUG: Interface match found in fvIfConn DN: {dn}")
+                             encap = conn_obj['attributes'].get('encap', '')
+                             if encap:
+                                 return encap, "Dynamic (VMM Resolved)", dn, domains_str
                 
-                log_debug("DEBUG: No matching DyPath found after checking all items.")
-                return "EPP: Interface Not Found", "VMM Domain", "N/A", domains_str
+                log_debug("DEBUG: No matching fvIfConn found after checking all items.")
+                return "EPP: Interface Not Found in Connections", "VMM Domain", "N/A", domains_str
 
             except Exception as e:
                 log_debug(f"  Error querying Dynamic VLAN: {e}")
