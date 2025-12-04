@@ -133,22 +133,27 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                 if not t_dn:
                     continue
                 
-                # Check for Direct Match
-                if f"paths-{node}/" in t_dn and target_direct_suffix in t_dn:
-                    return encap, "Direct", t_dn, domains_str
+                # Check for Direct Match (or Exact VPC Match if user provided Policy Group name)
+                # We check if the tDn contains the target suffix (pathep-[interface])
+                # AND if the Node ID is correct.
                 
-                # Check for VPC Match
-                if "protpaths-" in t_dn:
-                    try:
-                        parts = t_dn.split('/')
-                        for part in parts:
-                            if part.startswith('protpaths-'):
-                                nodes_str = part[10:] # 225-226
-                                vpc_nodes = nodes_str.split('-')
-                                if str(node) in vpc_nodes:
-                                    return encap, "VPC", t_dn, domains_str
-                    except Exception:
-                        pass
+                if target_direct_suffix in t_dn:
+                    # Check Node for Direct Path
+                    if f"paths-{node}/" in t_dn:
+                        return encap, "Direct", t_dn, domains_str
+                    
+                    # Check Node for VPC Path
+                    if "protpaths-" in t_dn:
+                        try:
+                            parts = t_dn.split('/')
+                            for part in parts:
+                                if part.startswith('protpaths-'):
+                                    nodes_str = part[10:] # 225-226
+                                    vpc_nodes = nodes_str.split('-')
+                                    if str(node) in vpc_nodes:
+                                        return encap, "VPC", t_dn, domains_str
+                        except Exception:
+                            pass
                 
                 # Check for Partial Match (Interface matches, but Node doesn't)
                 if target_direct_suffix in t_dn:

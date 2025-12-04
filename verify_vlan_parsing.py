@@ -25,7 +25,9 @@ def test_vlan_parsing():
     assert vlan == "vlan-3149"
     assert path_type == "Direct"
 
-    # Case 2: VPC Path Match
+    # Case 2: VPC Path Match (Exact Name)
+    # User must provide the Policy Group name for VPCs
+    interface_vpc = "Leaf-225-226_PolGrp_Port14"
     json_vpc = {
         "imdata": [
             {
@@ -38,11 +40,65 @@ def test_vlan_parsing():
             }
         ]
     }
-    # Test with node 225 (part of VPC)
-    vlan, path_type, path_dn, domains = parse_fvRsPathAtt(json_vpc, 225, interface)
-    print(f"Case 2 (VPC): Expected (vlan-401, VPC) -> Got ({vlan}, {path_type})")
+    # Test with node 225 (part of VPC) and CORRECT interface name
+    vlan, path_type, path_dn, domains = parse_fvRsPathAtt(json_vpc, 225, interface_vpc)
+    print(f"Case 2 (VPC Exact): Expected (vlan-401, VPC) -> Got ({vlan}, {path_type})")
     assert vlan == "vlan-401"
     assert path_type == "VPC"
+
+    # Case 2b: VPC Path Mismatch (Wrong Interface Name)
+    # User asks for eth1/14, but path is PolGrp_Port14 -> Should NOT match
+    vlan, path_type, path_dn, domains = parse_fvRsPathAtt(json_vpc, 225, "eth1/14")
+    print(f"Case 2b (VPC Mismatch): Expected (Not Found, None) -> Got ({vlan}, {path_type})")
+    assert vlan == "Not Found"
+
+    # --- User Provided Examples ---
+
+    # Case 6: User Example - Single Static Port
+    # tDn: topology/pod-1/paths-227/pathep-[eth1/14]
+    json_user_static = {
+        "imdata": [
+            {
+                "fvRsPathAtt": {
+                    "attributes": {
+                        "tDn": "topology/pod-1/paths-227/pathep-[eth1/14]",
+                        "encap": "vlan-3133"
+                    }
+                }
+            }
+        ]
+    }
+    # Test with Node 227, Interface eth1/14
+    vlan, path_type, path_dn, domains = parse_fvRsPathAtt(json_user_static, 227, "eth1/14")
+    print(f"Case 6 (User Static): Expected (vlan-3133, Direct) -> Got ({vlan}, {path_type})")
+    assert vlan == "vlan-3133"
+    assert path_type == "Direct"
+
+    # Case 7: User Example - VPC
+    # tDn: topology/pod-1/protpaths-227-228/pathep-[Leaf-227-228_PolGrp_Port19]
+    json_user_vpc = {
+        "imdata": [
+            {
+                "fvRsPathAtt": {
+                    "attributes": {
+                        "tDn": "topology/pod-1/protpaths-227-228/pathep-[Leaf-227-228_PolGrp_Port19]",
+                        "encap": "vlan-3101"
+                    }
+                }
+            }
+        ]
+    }
+    
+    # 7a: Test with Node 227, Interface Leaf-227-228_PolGrp_Port19 (Should Match)
+    vlan, path_type, path_dn, domains = parse_fvRsPathAtt(json_user_vpc, 227, "Leaf-227-228_PolGrp_Port19")
+    print(f"Case 7a (User VPC Exact): Expected (vlan-3101, VPC) -> Got ({vlan}, {path_type})")
+    assert vlan == "vlan-3101"
+    assert path_type == "VPC"
+
+    # 7b: Test with Node 227, Interface eth1/4 (Should NOT Match)
+    vlan, path_type, path_dn, domains = parse_fvRsPathAtt(json_user_vpc, 227, "eth1/4")
+    print(f"Case 7b (User VPC Mismatch): Expected (Not Found, None) -> Got ({vlan}, {path_type})")
+    assert vlan == "Not Found"
 
     # Case 3: No Match (Wrong Node) + Physical Domain
     json_nomatch = {
@@ -145,22 +201,24 @@ def parse_fvRsPathAtt(data, node, interface):
             if not t_dn:
                 continue
             
-            # Check for Direct Match
-            if f"paths-{node}/" in t_dn and target_direct_suffix in t_dn:
-                return encap, "Direct", t_dn, domains_str
-            
-            # Check for VPC Match
-            if "protpaths-" in t_dn:
-                try:
-                    parts = t_dn.split('/')
-                    for part in parts:
-                        if part.startswith('protpaths-'):
-                            nodes_str = part[10:]
-                            vpc_nodes = nodes_str.split('-')
-                            if str(node) in vpc_nodes:
-                                return encap, "VPC", t_dn, domains_str
-                except Exception:
-                    pass
+            # Check for Direct Match (or Exact VPC Match)
+            if target_direct_suffix in t_dn:
+                # Check Node for Direct Path
+                if f"paths-{node}/" in t_dn:
+                    return encap, "Direct", t_dn, domains_str
+                
+                # Check Node for VPC Path
+                if "protpaths-" in t_dn:
+                    try:
+                        parts = t_dn.split('/')
+                        for part in parts:
+                            if part.startswith('protpaths-'):
+                                nodes_str = part[10:]
+                                vpc_nodes = nodes_str.split('-')
+                                if str(node) in vpc_nodes:
+                                    return encap, "VPC", t_dn, domains_str
+                    except Exception:
+                        pass
             
             # Check for Partial Match
             if target_direct_suffix in t_dn:
