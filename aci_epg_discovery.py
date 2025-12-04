@@ -223,8 +223,55 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                     break
         
         if is_vmm:
-            # Even if VMM, if we found partial matches, it might be useful to know.
-            # But usually VMM is the fallback. 
+            # Attempt to resolve Dynamic VLAN via Endpoint Policy (EPP)
+            # URL: /api/node/mo/uni/epp/fv-[{epg_dn}]/node-{node}.json?query-target=subtree&target-subtree-class=fvIfConn
+            try:
+                epp_url = f"https://{apic_ip}/api/node/mo/uni/epp/fv-[{epg_dn}]/node-{node}.json?query-target=subtree&target-subtree-class=fvIfConn"
+                epp_resp = requests.get(epp_url, headers=headers, verify=False, timeout=10)
+                epp_resp.raise_for_status()
+                epp_data = epp_resp.json()
+                
+                clean_interface = str(interface).strip()
+                # We need to match the path inside dyatt-[...]
+                # Example: .../dyatt-[topology/pod-1/paths-215/pathep-[eth1/61]]/conndef/...
+                
+                for item in epp_data.get('imdata', []):
+                    if 'fvIfConn' in item:
+                        attrs = item['fvIfConn']['attributes']
+                        dn = attrs.get('dn', '')
+                        encap = attrs.get('encap', '')
+                        
+                        # Check if this fvIfConn is for our interface
+                        # The DN contains the path: .../dyatt-[PATH]/...
+                        if f"pathep-[{clean_interface}]" in dn:
+                             # Check for Node in path (paths-215 or protpaths-...)
+                             # The node is already part of the query URL (node-{node}), so we are looking at the right node's EPP.
+                             # But let's be safe and check the path string in the DN.
+                             
+                             # Extract the path part from dyatt-[...]
+                             import re
+                             match = re.search(r'dyatt-\[(.*?)\]', dn)
+                             if match:
+                                 path_in_dn = match.group(1)
+                                 
+                                 # Check if it matches our interface logic (Direct or VPC)
+                                 # 1. Direct: paths-{node}/pathep-[{interface}]
+                                 if f"paths-{node}/pathep-[{clean_interface}]" in path_in_dn:
+                                     return encap, "Dynamic (VMM Resolved)", path_in_dn, domains_str
+                                 
+                                 # 2. VPC: protpaths-...
+                                 # For VPC, the path might be ..._PolGrp_PortX
+                                 # We can reuse the Heuristic logic here if needed, but usually VMM resolves to specific ports?
+                                 # The user example showed: dyatt-[topology/pod-1/paths-215/pathep-[eth1/61]]
+                                 # This looks like a direct path.
+                                 
+                                 # Let's do a simpler check: if the interface is in the DN, and we queried the right Node EPP, it's likely a match.
+                                 if f"pathep-[{clean_interface}]" in path_in_dn:
+                                      return encap, "Dynamic (VMM Resolved)", path_in_dn, domains_str
+
+            except Exception as e:
+                print(f"  Error querying Dynamic VLAN: {e}")
+
             return "Dynamic (VMM)", "VMM Domain", "N/A", domains_str
 
         # 3. If neither, check if we had partial matches
