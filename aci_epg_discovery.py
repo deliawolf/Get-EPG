@@ -232,14 +232,12 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
         
         if is_vmm:
             # Attempt to resolve Dynamic VLAN via Endpoint Policy (EPP)
-            # 2-Step Process:
-            # 1. Query fvDyPathAtt under the Node to find the dynamic path object for our interface.
-            # 2. Query fvIfConn under that fvDyPathAtt to get the VLAN.
+            # Optimized: Query fvDyPathAtt AND its children (fvIfConn) in one go.
             
             try:
-                # Step 1: Find the fvDyPathAtt for this interface
-                dyatt_url = f"https://{apic_ip}/api/node/mo/uni/epp/fv-[{epg_dn}]/node-{node}.json?query-target=subtree&target-subtree-class=fvDyPathAtt"
-                log_debug(f"DEBUG: Querying DyPath: {dyatt_url}")
+                # Query fvDyPathAtt with children to get fvIfConn immediately
+                dyatt_url = f"https://{apic_ip}/api/node/mo/uni/epp/fv-[{epg_dn}]/node-{node}.json?query-target=subtree&target-subtree-class=fvDyPathAtt&rsp-subtree=children"
+                log_debug(f"DEBUG: Querying DyPath (Bulk): {dyatt_url}")
                 dyatt_resp = requests.get(dyatt_url, headers=headers, verify=False, timeout=10)
                 dyatt_resp.raise_for_status()
                 dyatt_data = dyatt_resp.json()
@@ -249,8 +247,6 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                 norm_interface = clean_interface.replace("Ethernet", "eth")
                 log_debug(f"DEBUG: Looking for interface: '{norm_interface}'")
                 
-                found_dyatt_dn = None
-                
                 items = dyatt_data.get('imdata', [])
                 log_debug(f"DEBUG: DyPath Items: {len(items)}")
                 
@@ -259,7 +255,8 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
 
                 for item in items:
                     if 'fvDyPathAtt' in item:
-                        dn = item['fvDyPathAtt']['attributes'].get('dn', '')
+                        dyatt_obj = item['fvDyPathAtt']
+                        dn = dyatt_obj['attributes'].get('dn', '')
                         log_debug(f"DEBUG: Checking DyPath DN: {dn}")
                         
                         # Check if this DyPath is for our interface
@@ -275,29 +272,21 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                                  # Check strict match for Direct or VPC
                                  if f"paths-{node}/pathep-[{norm_interface}]" in path_in_dn or \
                                     f"pathep-[{norm_interface}]" in path_in_dn: # Loose match for safety
-                                     found_dyatt_dn = dn
-                                     break
+                                     
+                                     # Found the correct DyPath, now look for fvIfConn in children
+                                     children = dyatt_obj.get('children', [])
+                                     log_debug(f"DEBUG: Checking {len(children)} children for fvIfConn")
+                                     
+                                     for child in children:
+                                         if 'fvIfConn' in child:
+                                             encap = child['fvIfConn']['attributes'].get('encap', '')
+                                             if encap:
+                                                 return encap, "Dynamic (VMM Resolved)", dn, domains_str
+                                     
+                                     return "EPP: No VLAN in Children", "VMM Domain", dn, domains_str
                 
-                if not found_dyatt_dn:
-                    log_debug("DEBUG: No matching DyPath found after checking all items.")
-                    return "EPP: Interface Not Found", "VMM Domain", "N/A", domains_str
-                
-                # Step 2: Query fvIfConn under the found DyPath
-                log_debug(f"DEBUG: Found DyPath: {found_dyatt_dn}")
-                conn_url = f"https://{apic_ip}/api/node/mo/{found_dyatt_dn}.json?query-target=subtree&target-subtree-class=fvIfConn"
-                conn_resp = requests.get(conn_url, headers=headers, verify=False, timeout=10)
-                conn_resp.raise_for_status()
-                conn_data = conn_resp.json()
-                
-                conn_items = conn_data.get('imdata', [])
-                if conn_items:
-                    for item in conn_items:
-                        if 'fvIfConn' in item:
-                            encap = item['fvIfConn']['attributes'].get('encap', '')
-                            if encap:
-                                return encap, "Dynamic (VMM Resolved)", found_dyatt_dn, domains_str
-                
-                return "EPP: No VLAN Found", "VMM Domain", found_dyatt_dn, domains_str
+                log_debug("DEBUG: No matching DyPath found after checking all items.")
+                return "EPP: Interface Not Found", "VMM Domain", "N/A", domains_str
 
             except Exception as e:
                 log_debug(f"  Error querying Dynamic VLAN: {e}")
