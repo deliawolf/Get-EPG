@@ -83,6 +83,12 @@ def parse_epgs(xml_content):
         print(f"Error parsing XML: {e}")
     return epgs
 
+# Helper for logging debug messages to file
+def log_debug(msg):
+    print(msg)
+    with open("debug_log.txt", "a") as f:
+        f.write(msg + "\n")
+
 def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
     """
     Queries the EPG for its fvRsPathAtt children and finds the VLAN for the given node/interface.
@@ -222,18 +228,7 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                     is_vmm = True
                     break
         
-# Helper for logging debug messages to file
-def log_debug(msg):
-    print(msg)
-    with open("debug_log.txt", "a") as f:
-        f.write(msg + "\n")
 
-def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
-    # ... (existing code) ...
-    # Initialize log file for this run (optional, or just append)
-    # We'll just append in the helper. User can delete if needed.
-    
-    # ... (inside the function) ...
         
         if is_vmm:
             # Attempt to resolve Dynamic VLAN via Endpoint Policy (EPP)
