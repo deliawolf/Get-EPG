@@ -222,6 +222,19 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                     is_vmm = True
                     break
         
+# Helper for logging debug messages to file
+def log_debug(msg):
+    print(msg)
+    with open("debug_log.txt", "a") as f:
+        f.write(msg + "\n")
+
+def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
+    # ... (existing code) ...
+    # Initialize log file for this run (optional, or just append)
+    # We'll just append in the helper. User can delete if needed.
+    
+    # ... (inside the function) ...
+        
         if is_vmm:
             # Attempt to resolve Dynamic VLAN via Endpoint Policy (EPP)
             # 2-Step Process:
@@ -231,7 +244,7 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
             try:
                 # Step 1: Find the fvDyPathAtt for this interface
                 dyatt_url = f"https://{apic_ip}/api/node/mo/uni/epp/fv-[{epg_dn}]/node-{node}.json?query-target=subtree&target-subtree-class=fvDyPathAtt"
-                print(f"DEBUG: Querying DyPath: {dyatt_url}")
+                log_debug(f"DEBUG: Querying DyPath: {dyatt_url}")
                 dyatt_resp = requests.get(dyatt_url, headers=headers, verify=False, timeout=10)
                 dyatt_resp.raise_for_status()
                 dyatt_data = dyatt_resp.json()
@@ -239,12 +252,12 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                 # Normalize interface for matching (Ethernet -> eth)
                 clean_interface = str(interface).strip()
                 norm_interface = clean_interface.replace("Ethernet", "eth")
-                print(f"DEBUG: Looking for interface: '{norm_interface}'")
+                log_debug(f"DEBUG: Looking for interface: '{norm_interface}'")
                 
                 found_dyatt_dn = None
                 
                 items = dyatt_data.get('imdata', [])
-                print(f"DEBUG: DyPath Items: {len(items)}")
+                log_debug(f"DEBUG: DyPath Items: {len(items)}")
                 
                 if not items:
                      return "EPP: No Dynamic Paths", "VMM Domain", "N/A", domains_str
@@ -252,13 +265,13 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                 for item in items:
                     if 'fvDyPathAtt' in item:
                         dn = item['fvDyPathAtt']['attributes'].get('dn', '')
-                        print(f"DEBUG: Checking DyPath DN: {dn}")
+                        log_debug(f"DEBUG: Checking DyPath DN: {dn}")
                         
                         # Check if this DyPath is for our interface
                         # DN format: .../dyatt-[topology/pod-1/paths-263/pathep-[eth1/58]]
                         
                         if f"pathep-[{norm_interface}]" in dn:
-                             print("DEBUG: Interface match found in DN!")
+                             log_debug("DEBUG: Interface match found in DN!")
                              # Verify strict match
                              import re
                              match = re.search(r'dyatt-\[(.*?)\]', dn)
@@ -271,11 +284,11 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                                      break
                 
                 if not found_dyatt_dn:
-                    print("DEBUG: No matching DyPath found after checking all items.")
+                    log_debug("DEBUG: No matching DyPath found after checking all items.")
                     return "EPP: Interface Not Found", "VMM Domain", "N/A", domains_str
                 
                 # Step 2: Query fvIfConn under the found DyPath
-                print(f"DEBUG: Found DyPath: {found_dyatt_dn}")
+                log_debug(f"DEBUG: Found DyPath: {found_dyatt_dn}")
                 conn_url = f"https://{apic_ip}/api/node/mo/{found_dyatt_dn}.json?query-target=subtree&target-subtree-class=fvIfConn"
                 conn_resp = requests.get(conn_url, headers=headers, verify=False, timeout=10)
                 conn_resp.raise_for_status()
@@ -292,7 +305,7 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                 return "EPP: No VLAN Found", "VMM Domain", found_dyatt_dn, domains_str
 
             except Exception as e:
-                print(f"  Error querying Dynamic VLAN: {e}")
+                log_debug(f"  Error querying Dynamic VLAN: {e}")
                 return f"EPP Error: {str(e)}", "VMM Domain", "N/A", domains_str
 
         # 3. If neither, check if we had partial matches
@@ -332,6 +345,10 @@ def main():
     except FileNotFoundError:
         print(f"Error: {input_file} not found.")
         return
+
+    # Clear debug log
+    with open("debug_log.txt", "w") as f:
+        f.write("--- Debug Log Started ---\n")
 
     all_results = []
 
