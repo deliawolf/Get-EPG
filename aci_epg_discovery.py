@@ -231,7 +231,10 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                 epp_resp.raise_for_status()
                 epp_data = epp_resp.json()
                 
+                # Normalize interface for matching (Ethernet -> eth)
                 clean_interface = str(interface).strip()
+                norm_interface = clean_interface.replace("Ethernet", "eth")
+                
                 # We need to match the path inside dyatt-[...]
                 # Example: .../dyatt-[topology/pod-1/paths-215/pathep-[eth1/61]]/conndef/...
                 
@@ -243,7 +246,7 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                         
                         # Check if this fvIfConn is for our interface
                         # The DN contains the path: .../dyatt-[PATH]/...
-                        if f"pathep-[{clean_interface}]" in dn:
+                        if f"pathep-[{norm_interface}]" in dn:
                              # Check for Node in path (paths-215 or protpaths-...)
                              # The node is already part of the query URL (node-{node}), so we are looking at the right node's EPP.
                              # But let's be safe and check the path string in the DN.
@@ -256,7 +259,7 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                                  
                                  # Check if it matches our interface logic (Direct or VPC)
                                  # 1. Direct: paths-{node}/pathep-[{interface}]
-                                 if f"paths-{node}/pathep-[{clean_interface}]" in path_in_dn:
+                                 if f"paths-{node}/pathep-[{norm_interface}]" in path_in_dn:
                                      return encap, "Dynamic (VMM Resolved)", path_in_dn, domains_str
                                  
                                  # 2. VPC: protpaths-...
@@ -266,7 +269,7 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                                  # This looks like a direct path.
                                  
                                  # Let's do a simpler check: if the interface is in the DN, and we queried the right Node EPP, it's likely a match.
-                                 if f"pathep-[{clean_interface}]" in path_in_dn:
+                                 if f"pathep-[{norm_interface}]" in path_in_dn:
                                       return encap, "Dynamic (VMM Resolved)", path_in_dn, domains_str
 
             except Exception as e:
