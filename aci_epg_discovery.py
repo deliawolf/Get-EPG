@@ -280,17 +280,17 @@ def main():
         if xml_content:
             epgs = parse_epgs(xml_content)
             if epgs:
-                print(f"  Found {len(epgs)} EPGs.")
+                print(f"  Found {len(epgs)} EPGs. Querying Path Details...")
                 for epg in epgs:
                     epg['Node'] = node
                     epg['Interface'] = interface
                     
-                    # Skip VLAN Query as per user request
-                    # vlan, path_type, path_dn, domains = get_epg_vlan(apic_ip, token, epg['DN'], node, interface)
-                    # epg['VLAN'] = vlan
-                    # epg['PathType'] = path_type
-                    # epg['PathDN'] = path_dn
-                    # epg['Domains'] = domains
+                    # Query Path Details (VLAN, Type, DN)
+                    vlan, path_type, path_dn, domains = get_epg_vlan(apic_ip, token, epg['DN'], node, interface)
+                    epg['VLAN'] = vlan
+                    epg['PathType'] = path_type
+                    epg['PathDN'] = path_dn
+                    epg['Domains'] = domains
                     
                     all_results.append(epg)
             else:
@@ -302,8 +302,8 @@ def main():
     # Save results
     if all_results:
         df_output = pd.DataFrame(all_results)
-        # Reorder columns - Simplified as per user request
-        cols = ['Node', 'Interface', 'Tenant', 'AppProfile', 'EPG']
+        # Reorder columns - Added PathType and PathDN as requested
+        cols = ['Node', 'Interface', 'Tenant', 'AppProfile', 'EPG', 'PathType', 'PathDN']
         # Ensure all columns exist
         for col in cols:
             if col not in df_output.columns:
