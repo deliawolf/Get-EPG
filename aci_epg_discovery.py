@@ -239,6 +239,7 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                 # Normalize interface for matching (Ethernet -> eth)
                 clean_interface = str(interface).strip()
                 norm_interface = clean_interface.replace("Ethernet", "eth")
+                print(f"DEBUG: Looking for interface: '{norm_interface}'")
                 
                 found_dyatt_dn = None
                 
@@ -251,10 +252,13 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                 for item in items:
                     if 'fvDyPathAtt' in item:
                         dn = item['fvDyPathAtt']['attributes'].get('dn', '')
+                        print(f"DEBUG: Checking DyPath DN: {dn}")
+                        
                         # Check if this DyPath is for our interface
                         # DN format: .../dyatt-[topology/pod-1/paths-263/pathep-[eth1/58]]
                         
                         if f"pathep-[{norm_interface}]" in dn:
+                             print("DEBUG: Interface match found in DN!")
                              # Verify strict match
                              import re
                              match = re.search(r'dyatt-\[(.*?)\]', dn)
@@ -267,6 +271,7 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                                      break
                 
                 if not found_dyatt_dn:
+                    print("DEBUG: No matching DyPath found after checking all items.")
                     return "EPP: Interface Not Found", "VMM Domain", "N/A", domains_str
                 
                 # Step 2: Query fvIfConn under the found DyPath
