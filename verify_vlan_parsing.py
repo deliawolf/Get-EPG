@@ -46,11 +46,13 @@ def test_vlan_parsing():
     assert vlan == "vlan-401"
     assert path_type == "VPC"
 
-    # Case 2b: VPC Path Mismatch (Wrong Interface Name)
-    # User asks for eth1/14, but path is PolGrp_Port14 -> Should NOT match
+    # Case 2b: VPC Heuristic Match (eth1/14 -> PolGrp_Port14)
+    # User asks for eth1/14, path is PolGrp_Port14.
+    # Strict match fails, but Heuristic should find "14" in "Port14".
     vlan, path_type, path_dn, domains = parse_fvRsPathAtt(json_vpc, 225, "eth1/14")
-    print(f"Case 2b (VPC Mismatch): Expected (Not Found, None) -> Got ({vlan}, {path_type})")
-    assert vlan == "Not Found"
+    print(f"Case 2b (VPC Heuristic): Expected (vlan-401, VPC) -> Got ({vlan}, {path_type})")
+    assert vlan == "vlan-401"
+    assert path_type == "VPC"
 
     # --- User Provided Examples ---
 
@@ -98,6 +100,45 @@ def test_vlan_parsing():
     # 7b: Test with Node 227, Interface eth1/4 (Should NOT Match)
     vlan, path_type, path_dn, domains = parse_fvRsPathAtt(json_user_vpc, 227, "eth1/4")
     print(f"Case 7b (User VPC Mismatch): Expected (Not Found, None) -> Got ({vlan}, {path_type})")
+    assert vlan == "Not Found"
+
+    # Case 8: Heuristic Match (eth1/10 -> Port10)
+    # tDn: .../pathep-[Leaf-225-226_PolGrp_Port10]
+    json_heuristic = {
+        "imdata": [
+            {
+                "fvRsPathAtt": {
+                    "attributes": {
+                        "tDn": "topology/pod-1/protpaths-225-226/pathep-[Leaf-225-226_PolGrp_Port10]",
+                        "encap": "vlan-626"
+                    }
+                }
+            }
+        ]
+    }
+    # Test with Node 225, Interface eth1/10
+    vlan, path_type, path_dn, domains = parse_fvRsPathAtt(json_heuristic, 225, "eth1/10")
+    print(f"Case 8 (Heuristic Match): Expected (vlan-626, VPC) -> Got ({vlan}, {path_type})")
+    assert vlan == "vlan-626"
+    assert path_type == "VPC"
+
+    # Case 9: Heuristic Safety (eth1/1 -> Port11) - Should NOT match
+    # tDn: .../pathep-[Leaf-225-226_PolGrp_Port11]
+    json_heuristic_fail = {
+        "imdata": [
+            {
+                "fvRsPathAtt": {
+                    "attributes": {
+                        "tDn": "topology/pod-1/protpaths-225-226/pathep-[Leaf-225-226_PolGrp_Port11]",
+                        "encap": "vlan-626"
+                    }
+                }
+            }
+        ]
+    }
+    # Test with Node 225, Interface eth1/1
+    vlan, path_type, path_dn, domains = parse_fvRsPathAtt(json_heuristic_fail, 225, "eth1/1")
+    print(f"Case 9 (Heuristic Safety): Expected (Not Found, None) -> Got ({vlan}, {path_type})")
     assert vlan == "Not Found"
 
     # Case 3: No Match (Wrong Node) + Physical Domain
@@ -219,6 +260,41 @@ def parse_fvRsPathAtt(data, node, interface):
                                     return encap, "VPC", t_dn, domains_str
                     except Exception:
                         pass
+            
+            # Heuristic VPC Match: Check if Port Number matches
+            if "protpaths-" in t_dn:
+                try:
+                    # 1. Verify Node ID matches VPC
+                    node_match = False
+                    parts = t_dn.split('/')
+                    for part in parts:
+                        if part.startswith('protpaths-'):
+                            nodes_str = part[10:]
+                            vpc_nodes = nodes_str.split('-')
+                            if str(node) in vpc_nodes:
+                                node_match = True
+                                break
+                    
+                    if node_match:
+                        # 2. Extract Port Number from Input
+                        # input: eth1/10 -> 10
+                        import re
+                        port_num = None
+                        match = re.search(r'(\d+)$', clean_interface)
+                        if match:
+                            port_num = match.group(1)
+                        
+                        if port_num:
+                            # 3. Extract all numbers from the Path Suffix (inside pathep-[...])
+                            suffix_match = re.search(r'pathep-\[(.*?)\]', t_dn)
+                            if suffix_match:
+                                suffix_content = suffix_match.group(1)
+                                path_numbers = re.findall(r'\d+', suffix_content)
+                                
+                                if port_num in path_numbers:
+                                    return encap, "VPC", t_dn, domains_str
+                except Exception:
+                    pass
             
             # Check for Partial Match
             if target_direct_suffix in t_dn:

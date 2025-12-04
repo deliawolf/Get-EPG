@@ -155,6 +155,47 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                         except Exception:
                             pass
                 
+                # Heuristic VPC Match: Check if Port Number matches
+                # If the user asks for 'eth1/10' and the path is '..._PolGrp_Port10', strict match fails.
+                # We check if the port number (10) appears as a distinct number in the path suffix.
+                if "protpaths-" in t_dn:
+                    try:
+                        # 1. Verify Node ID matches VPC
+                        node_match = False
+                        parts = t_dn.split('/')
+                        for part in parts:
+                            if part.startswith('protpaths-'):
+                                nodes_str = part[10:]
+                                vpc_nodes = nodes_str.split('-')
+                                if str(node) in vpc_nodes:
+                                    node_match = True
+                                    break
+                        
+                        if node_match:
+                            # 2. Extract Port Number from Input
+                            # input: eth1/10 -> 10
+                            import re
+                            port_num = None
+                            match = re.search(r'(\d+)$', clean_interface)
+                            if match:
+                                port_num = match.group(1)
+                            
+                            if port_num:
+                                # 3. Extract all numbers from the Path Suffix (inside pathep-[...])
+                                # tDn: .../pathep-[Leaf-225-226_PolGrp_Port10]
+                                suffix_match = re.search(r'pathep-\[(.*?)\]', t_dn)
+                                if suffix_match:
+                                    suffix_content = suffix_match.group(1)
+                                    # Find all distinct numbers in the suffix
+                                    path_numbers = re.findall(r'\d+', suffix_content)
+                                    
+                                    # 4. Check if port_num is in path_numbers
+                                    # We compare strings: "10" in ["225", "226", "10"] -> True
+                                    if port_num in path_numbers:
+                                        return encap, "VPC", t_dn, domains_str
+                    except Exception:
+                        pass
+                
                 # Check for Partial Match (Interface matches, but Node doesn't)
                 if target_direct_suffix in t_dn:
                     # Extract the node from the path to show the user
