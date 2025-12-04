@@ -239,6 +239,9 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                 items = epp_data.get('imdata', [])
                 print(f"DEBUG: EPP Items found: {len(items)}")
 
+                if not items:
+                     return "EPP: No Data", "VMM Domain", "N/A", domains_str
+
                 for item in items:
                     if 'fvIfConn' in item:
                         attrs = item['fvIfConn']['attributes']
@@ -261,10 +264,12 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                                  if f"pathep-[{norm_interface}]" in path_in_dn:
                                       print(f"DEBUG: MATCH FOUND (Loose)! Encap: {encap}")
                                       return encap, "Dynamic (VMM Resolved)", path_in_dn, domains_str
+                
+                return "EPP: No Match", "VMM Domain", "N/A", domains_str
+
             except Exception as e:
                 print(f"  Error querying Dynamic VLAN: {e}")
-
-            return "Dynamic (VMM)", "VMM Domain", "N/A", domains_str
+                return f"EPP Error: {str(e)}", "VMM Domain", "N/A", domains_str
 
         # 3. If neither, check if we had partial matches
         if partial_matches:
