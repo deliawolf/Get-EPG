@@ -141,6 +141,26 @@ def test_vlan_parsing():
     print(f"Case 9 (Heuristic Safety): Expected (Not Found, None) -> Got ({vlan}, {path_type})")
     assert vlan == "Not Found"
 
+    # Case 10: User Example - Single Static Port (eth1/15)
+    # Confirms that standard physical ports still match correctly
+    json_static_15 = {
+        "imdata": [
+            {
+                "fvRsPathAtt": {
+                    "attributes": {
+                        "tDn": "topology/pod-1/paths-228/pathep-[eth1/15]",
+                        "encap": "vlan-626"
+                    }
+                }
+            }
+        ]
+    }
+    # Test with Node 228, Interface eth1/15
+    vlan, path_type, path_dn, domains = parse_fvRsPathAtt(json_static_15, 228, "eth1/15")
+    print(f"Case 10 (Static eth1/15): Expected (vlan-626, Direct) -> Got ({vlan}, {path_type})")
+    assert vlan == "vlan-626"
+    assert path_type == "Direct"
+
     # Case 3: No Match (Wrong Node) + Physical Domain
     json_nomatch = {
         "imdata": [
