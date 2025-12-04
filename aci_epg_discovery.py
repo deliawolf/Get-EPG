@@ -236,7 +236,7 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
             try:
                 # Query fvIfConn directly
                 conn_url = f"https://{apic_ip}/api/node/mo/uni/epp/fv-[{epg_dn}]/node-{node}.json?query-target=subtree&target-subtree-class=fvIfConn"
-                log_debug(f"DEBUG: Querying fvIfConn (Bulk): {conn_url}")
+                # log_debug(f"DEBUG: Querying fvIfConn (Bulk): {conn_url}")
                 conn_resp = requests.get(conn_url, headers=headers, verify=False, timeout=10)
                 conn_resp.raise_for_status()
                 conn_data = conn_resp.json()
@@ -244,10 +244,10 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                 # Normalize interface for matching (Ethernet -> eth)
                 clean_interface = str(interface).strip()
                 norm_interface = clean_interface.replace("Ethernet", "eth")
-                log_debug(f"DEBUG: Looking for interface: '{norm_interface}'")
+                # log_debug(f"DEBUG: Looking for interface: '{norm_interface}'")
                 
                 items = conn_data.get('imdata', [])
-                log_debug(f"DEBUG: fvIfConn Items: {len(items)}")
+                # log_debug(f"DEBUG: fvIfConn Items: {len(items)}")
                 
                 if not items:
                      return "EPP: No Dynamic Connections", "VMM Domain", "N/A", domains_str
@@ -266,7 +266,7 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                              if encap:
                                  return encap, "Dynamic (VMM Resolved)", dn, domains_str
                 
-                log_debug("DEBUG: No matching fvIfConn found after checking all items.")
+                # log_debug("DEBUG: No matching fvIfConn found after checking all items.")
                 return "EPP: Interface Not Found in Connections", "VMM Domain", "N/A", domains_str
 
             except Exception as e:
