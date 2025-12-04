@@ -303,7 +303,7 @@ def main():
     if all_results:
         df_output = pd.DataFrame(all_results)
         # Reorder columns - Added PathType and PathDN as requested
-        cols = ['Node', 'Interface', 'Tenant', 'AppProfile', 'EPG', 'PathType', 'PathDN']
+        cols = ['Node', 'Interface', 'Tenant', 'AppProfile', 'EPG', 'VLAN', 'PathType', 'PathDN']
         # Ensure all columns exist
         for col in cols:
             if col not in df_output.columns:
