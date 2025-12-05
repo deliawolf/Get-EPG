@@ -83,11 +83,7 @@ def parse_epgs(xml_content):
         print(f"Error parsing XML: {e}")
     return epgs
 
-# Helper for logging debug messages to file
-def log_debug(msg):
-    print(msg)
-    with open("debug_log.txt", "a") as f:
-        f.write(msg + "\n")
+
 
 def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
     """
@@ -236,7 +232,7 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
             try:
                 # Query fvIfConn directly
                 conn_url = f"https://{apic_ip}/api/node/mo/uni/epp/fv-[{epg_dn}]/node-{node}.json?query-target=subtree&target-subtree-class=fvIfConn"
-                # log_debug(f"DEBUG: Querying fvIfConn (Bulk): {conn_url}")
+
                 conn_resp = requests.get(conn_url, headers=headers, verify=False, timeout=10)
                 conn_resp.raise_for_status()
                 conn_data = conn_resp.json()
@@ -244,10 +240,10 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                 # Normalize interface for matching (Ethernet -> eth)
                 clean_interface = str(interface).strip()
                 norm_interface = clean_interface.replace("Ethernet", "eth")
-                # log_debug(f"DEBUG: Looking for interface: '{norm_interface}'")
+
                 
                 items = conn_data.get('imdata', [])
-                # log_debug(f"DEBUG: fvIfConn Items: {len(items)}")
+
                 
                 if not items:
                      return "EPP: No Dynamic Connections", "VMM Domain", "N/A", domains_str
@@ -261,16 +257,16 @@ def get_epg_vlan(apic_ip, token, epg_dn, node, interface):
                         # DN format: .../dyatt-[topology/pod-1/paths-215/pathep-[eth1/24]]/conndef/conn-...
                         
                         if f"pathep-[{norm_interface}]" in dn:
-                             log_debug(f"DEBUG: Interface match found in fvIfConn DN: {dn}")
+
                              encap = conn_obj['attributes'].get('encap', '')
                              if encap:
                                  return encap, "Dynamic (VMM Resolved)", dn, domains_str
                 
-                # log_debug("DEBUG: No matching fvIfConn found after checking all items.")
+
                 return "EPP: Interface Not Found in Connections", "VMM Domain", "N/A", domains_str
 
             except Exception as e:
-                log_debug(f"  Error querying Dynamic VLAN: {e}")
+                print(f"  Error querying Dynamic VLAN: {e}")
                 return f"EPP Error: {str(e)}", "VMM Domain", "N/A", domains_str
 
         # 3. If neither, check if we had partial matches
@@ -311,9 +307,7 @@ def main():
         print(f"Error: {input_file} not found.")
         return
 
-    # Clear debug log
-    with open("debug_log.txt", "w") as f:
-        f.write("--- Debug Log Started ---\n")
+
 
     all_results = []
 
